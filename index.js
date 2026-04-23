@@ -26,7 +26,22 @@ const styles = {
   tableHeader: {
     font: { bold: true, size: 11, color: { argb: 'FFFFFFFF' } },
     fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } },
-    alignment: { horizontal: 'center', vertical: 'center' }
+    alignment: { horizontal: 'center', vertical: 'center' },
+    border: {
+      top: { style: 'thin', color: { argb: 'FF000000' } },
+      left: { style: 'thin', color: { argb: 'FF000000' } },
+      bottom: { style: 'thin', color: { argb: 'FF000000' } },
+      right: { style: 'thin', color: { argb: 'FF000000' } }
+    }
+  },
+  tableCell: {
+    alignment: { horizontal: 'left', vertical: 'center' },
+    border: {
+      top: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+      left: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+      bottom: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+      right: { style: 'thin', color: { argb: 'FFD3D3D3' } }
+    }
   },
   faqHeader: {
     font: { bold: true, size: 11 },
@@ -38,6 +53,31 @@ const styles = {
     alignment: { horizontal: 'left', vertical: 'center' }
   }
 };
+
+// ============================================
+// HELPER: Generar slug de URL
+// ============================================
+function generateSlug(clusterName, service, city) {
+  // Limpiar y convertir a slug
+  const cleanName = (clusterName || service || 'service')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remover acentos
+    .replace(/[^a-z0-9\s-]/g, '') // Solo letras, números, espacios y guiones
+    .trim()
+    .replace(/\s+/g, '-'); // Espacios a guiones
+  
+  const cleanCity = (city || '')
+    .toLowerCase()
+    .split(',')[0] // Solo la ciudad, no el país
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-');
+
+  return cleanCity ? `/${cleanName}-${cleanCity}` : `/${cleanName}`;
+}
 
 // ============================================
 // ENDPOINT: /generate-excel
@@ -57,85 +97,63 @@ app.post('/generate-excel', async (req, res) => {
     const summary = clustering_summary || {};
 
     // ============================================
-    // SHEET 0: OVERVIEW
+    // SHEET 0: TABLA OVERVIEW (NUEVO)
     // ============================================
-    function createOverviewSheet() {
-      const sheet = workbook.addWorksheet('0. Site Overview');
+    function createOverviewTableSheet() {
+      const sheet = workbook.addWorksheet('COMPLETE SERVICE PAGES');
       let row = 1;
 
-      sheet.getCell(`A${row}`).value = 'SITE OVERVIEW & CLUSTERING SUMMARY';
+      // Título principal
+      sheet.getCell(`A${row}`).value = `COMPLETE ${allClusters.length} CITY SERVICE PAGES`;
       Object.assign(sheet.getCell(`A${row}`), styles.pageTitle);
       sheet.mergeCells(`A${row}:F${row}`);
+      sheet.getRow(row).height = 25;
       row += 2;
 
-      sheet.getCell(`A${row}`).value = 'CLUSTERING SUMMARY';
-      Object.assign(sheet.getCell(`A${row}`), styles.sectionHeader);
-      sheet.mergeCells(`A${row}:C${row}`);
-      row++;
-
-      [
-        ['Total Keywords Analyzed', summary.total_keywords || 0],
-        ['Total Clusters Created', summary.total_clusters || allClusters.length],
-        ['Avg Keywords per Cluster', summary.avg_keywords_per_cluster || 0]
-      ].forEach(([label, value]) => {
-        sheet.getCell(`A${row}`).value = label;
-        Object.assign(sheet.getCell(`A${row}`), styles.metadataLabel);
-        sheet.getCell(`B${row}`).value = value;
-        row++;
-      });
-      row++;
-
-      sheet.getCell(`A${row}`).value = 'CLUSTER DISTRIBUTION';
-      Object.assign(sheet.getCell(`A${row}`), styles.sectionHeader);
-      sheet.mergeCells(`A${row}:C${row}`);
-      row++;
-
-      if (summary.cluster_distribution) {
-        [
-          ['1 keyword clusters', summary.cluster_distribution['1_keyword'] || 0],
-          ['2-5 keywords clusters', summary.cluster_distribution['2-5_keywords'] || 0],
-          ['6-10 keywords clusters', summary.cluster_distribution['6-10_keywords'] || 0],
-          ['11+ keywords clusters', summary.cluster_distribution['11+_keywords'] || 0]
-        ].forEach(([label, value]) => {
-          sheet.getCell(`A${row}`).value = label;
-          sheet.getCell(`B${row}`).value = value;
-          row++;
-        });
-      }
-      row++;
-
-      sheet.getCell(`A${row}`).value = 'TOP CLUSTERS BY KEYWORD COUNT';
-      Object.assign(sheet.getCell(`A${row}`), styles.sectionHeader);
-      sheet.mergeCells(`A${row}:F${row}`);
-      row++;
-
-      ['Rank', 'Cluster Name', 'Keywords', 'Priority', 'Service', 'Location'].forEach((header, i) => {
+      // Headers de la tabla
+      const headers = ['#', 'Service', 'City', 'URL', 'Primary Keyword', 'Volume'];
+      headers.forEach((header, i) => {
         const cell = sheet.getCell(row, i + 1);
         cell.value = header;
         Object.assign(cell, styles.tableHeader);
       });
       row++;
 
-      const sortedClusters = [...allClusters].sort((a, b) =>
-        (b.keywords?.length || 0) - (a.keywords?.length || 0)
-      ).slice(0, 10);
+      // Datos de cada cluster
+      allClusters.forEach((cluster, idx) => {
+        const service = cluster.primary_dimensions?.service_category || 'N/A';
+        const city = (cluster.primary_dimensions?.geographic_scope || '').split(',')[0].trim() || 'N/A';
+        const url = generateSlug(cluster.cluster_name, service, city);
+        const primaryKeyword = cluster.keywords?.[0]?.keyword || 'N/A';
+        const volume = cluster.keywords?.[0]?.volume || 'TBD';
 
-      sortedClusters.forEach((cluster, idx) => {
-        sheet.getCell(`A${row}`).value = idx + 1;
-        sheet.getCell(`B${row}`).value = cluster.cluster_name || 'N/A';
-        sheet.getCell(`C${row}`).value = cluster.keywords?.length || 0;
-        sheet.getCell(`D${row}`).value = cluster.seo_strategy?.priority || 'MEDIUM';
-        sheet.getCell(`E${row}`).value = cluster.primary_dimensions?.service_category || 'N/A';
-        sheet.getCell(`F${row}`).value = cluster.primary_dimensions?.geographic_scope || 'N/A';
+        [
+          idx + 1,
+          service,
+          city,
+          url,
+          primaryKeyword,
+          volume
+        ].forEach((value, colIdx) => {
+          const cell = sheet.getCell(row, colIdx + 1);
+          cell.value = value;
+          Object.assign(cell, styles.tableCell);
+          
+          // Alineación especial para columnas numéricas
+          if (colIdx === 0 || colIdx === 5) {
+            cell.alignment = { horizontal: 'center', vertical: 'center' };
+          }
+        });
         row++;
       });
 
-      sheet.getColumn(1).width = 8;
-      sheet.getColumn(2).width = 50;
-      sheet.getColumn(3).width = 12;
-      sheet.getColumn(4).width = 12;
-      sheet.getColumn(5).width = 30;
-      sheet.getColumn(6).width = 20;
+      // Ajustar anchos de columna
+      sheet.getColumn(1).width = 5;   // #
+      sheet.getColumn(2).width = 35;  // Service
+      sheet.getColumn(3).width = 20;  // City
+      sheet.getColumn(4).width = 45;  // URL
+      sheet.getColumn(5).width = 35;  // Primary Keyword
+      sheet.getColumn(6).width = 10;  // Volume
     }
 
     // ============================================
@@ -320,7 +338,7 @@ app.post('/generate-excel', async (req, res) => {
     // ============================================
     // GENERAR TODAS LAS HOJAS
     // ============================================
-    createOverviewSheet();
+    createOverviewTableSheet(); // NUEVO Sheet 0
     createArchitectureSheet();
     allClusters.forEach((cluster, index) => {
       createClusterPageSheet(cluster, index + 2);
