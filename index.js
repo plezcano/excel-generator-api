@@ -1,4 +1,4 @@
-// index.js - VERSIÓN COMPLETA CON TODAS LAS MEJORAS
+// index.js - VERSIÓN COMPLETA CON PRIMARY Y SECONDARY KEYWORDS
 const express = require('express');
 const ExcelJS = require('exceljs');
 const cors = require('cors');
@@ -183,8 +183,8 @@ app.post('/generate-excel', async (req, res) => {
         const service = cluster.primary_dimensions?.service_category || 'N/A';
         const city = (cluster.primary_dimensions?.geographic_scope || '').split(',')[0].trim() || 'N/A';
         const url = generateSlug(cluster.cluster_name, service, city);
-        const primaryKeyword = cluster.keywords?.[0]?.keyword || 'N/A';
-        const volume = cluster.keywords?.[0]?.volume || 'TBD';
+        const primaryKeyword = cluster.primary_keyword?.keyword || cluster.keywords?.[0]?.keyword || 'N/A';
+        const volume = cluster.primary_keyword?.volume || cluster.keywords?.[0]?.volume || 'TBD';
 
         [
           { value: idx + 1, style: styles.tableCellCenter },
@@ -345,11 +345,11 @@ app.post('/generate-excel', async (req, res) => {
       row++;
 
       // ============================================
-      // KEYWORDS TABLE (MEJORADO)
+      // PRIMARY KEYWORD
       // ============================================
-      const keywordsHeader = sheet.getCell(`A${row}`);
-      keywordsHeader.value = 'PRIMARY KEYWORDS';
-      Object.assign(keywordsHeader, styles.sectionHeader);
+      const primaryKwHeader = sheet.getCell(`A${row}`);
+      primaryKwHeader.value = 'PRIMARY KEYWORD';
+      Object.assign(primaryKwHeader, styles.sectionHeader);
       sheet.mergeCells(`A${row}:B${row}`);
       row++;
 
@@ -361,20 +361,45 @@ app.post('/generate-excel', async (req, res) => {
       });
       row++;
 
-      if (cluster.keywords && cluster.keywords.length > 0) {
-        cluster.keywords.forEach(kw => {
-          const kwCell = sheet.getCell(`A${row}`);
-          kwCell.value = kw.keyword || 'N/A';
-          Object.assign(kwCell, styles.tableCell);
-          
-          const detailsCell = sheet.getCell(`B${row}`);
-          detailsCell.value = `Vol: ${kw.volume || 0} | Intent: ${kw.search_intent || 'N/A'} | Pain: ${kw.pain_point || 'N/A'}`;
-          Object.assign(detailsCell, styles.tableCell);
-          
+      // Primary keyword data
+      if (cluster.primary_keyword) {
+        const pk = cluster.primary_keyword;
+        
+        const kwCell = sheet.getCell(`A${row}`);
+        kwCell.value = pk.keyword || 'N/A';
+        Object.assign(kwCell, styles.tableCell);
+        
+        const detailsCell = sheet.getCell(`B${row}`);
+        detailsCell.value = `Vol: ${pk.volume || 0} | Intent: ${pk.search_intent || 'N/A'} | Pain: ${pk.pain_point || 'N/A'}`;
+        Object.assign(detailsCell, styles.tableCell);
+        
+        row++;
+      } else {
+        sheet.getCell(`A${row}`).value = '(No primary keyword)';
+        sheet.mergeCells(`A${row}:B${row}`);
+        row++;
+      }
+      row++;
+
+      // ============================================
+      // SECONDARY KEYWORDS
+      // ============================================
+      const secondaryKwHeader = sheet.getCell(`A${row}`);
+      secondaryKwHeader.value = 'SECONDARY KEYWORDS';
+      Object.assign(secondaryKwHeader, styles.sectionHeader);
+      sheet.mergeCells(`A${row}:B${row}`);
+      row++;
+
+      if (cluster.secondary_keywords && cluster.secondary_keywords.length > 0) {
+        cluster.secondary_keywords.forEach((sk, index) => {
+          const kwText = `${index + 1}. ${sk.keyword} (Vol: ${sk.volume || 0}, CPC: $${sk.cpc || 0}, Intent: ${sk.search_intent || 'N/A'})`;
+          sheet.getCell(`A${row}`).value = kwText;
+          sheet.mergeCells(`A${row}:B${row}`);
+          Object.assign(sheet.getCell(`A${row}`), styles.tableCell);
           row++;
         });
       } else {
-        sheet.getCell(`A${row}`).value = '(No keywords)';
+        sheet.getCell(`A${row}`).value = '(No secondary keywords)';
         sheet.mergeCells(`A${row}:B${row}`);
         row++;
       }
